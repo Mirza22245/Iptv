@@ -10,6 +10,7 @@ from app.database import get_database, shutdown_database, startup_database
 from app.routers.admin import router as dashboard_router
 from app.routers.auth import router as auth_router
 from app.routers.bookings import router as bookings_router
+from app.routers.business import router as business_router
 from app.routers.clinical import router as clinical_router
 from app.routers.clinical_media import router as clinical_media_router
 
@@ -23,7 +24,7 @@ async def lifespan(_: FastAPI):
         await shutdown_database()
 
 
-app = FastAPI(title="Lydia Core API", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="Lydia Core API", version="0.7.0", lifespan=lifespan)
 
 cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
 if cors_origins:
@@ -40,6 +41,7 @@ app.include_router(bookings_router)
 app.include_router(dashboard_router)
 app.include_router(clinical_router)
 app.include_router(clinical_media_router)
+app.include_router(business_router)
 
 
 @app.get("/health", tags=["system"])
