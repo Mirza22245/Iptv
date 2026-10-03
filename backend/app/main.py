@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from app.database import get_database, shutdown_database, startup_database
+from app.routers.bookings import router as bookings_router
 
 
 @asynccontextmanager
@@ -18,9 +19,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Lydia Core API",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
+
+app.include_router(bookings_router)
 
 
 @app.get("/health", tags=["system"])
