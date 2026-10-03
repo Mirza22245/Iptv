@@ -42,35 +42,36 @@ async def register_customer(
 
     password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
 
-    async with db.pool.acquire() as conn:
-        async with conn.transaction():
-            clinic_exists = await conn.fetchval(
-                "SELECT 1 FROM clinics WHERE id = $1", payload.clinic_id
-            )
-            if clinic_exists is None:
-                raise HTTPException(status_code=404, detail="Clinic not found")
+    # Registration is a controlled provisioning operation. It establishes a
+    # tenant context before touching RLS-protected identity/customer tables.
+    async with db.transaction(clinic_id=payload.clinic_id, user_id=0, role="admin") as conn:
+        clinic_exists = await conn.fetchval(
+            "SELECT 1 FROM clinics WHERE id = $1", payload.clinic_id
+        )
+        if clinic_exists is None:
+            raise HTTPException(status_code=404, detail="Clinic not found")
 
-            try:
-                user_id = await conn.fetchval(
-                    """
-                    INSERT INTO users (clinic_id, email, password_hash, role, is_active)
-                    VALUES ($1, $2, $3, 'customer', TRUE)
-                    RETURNING id
-                    """,
-                    payload.clinic_id, str(payload.email).lower(), password_hash,
-                )
-            except asyncpg.exceptions.UniqueViolationError as exc:
-                raise HTTPException(status_code=409, detail="Email already registered") from exc
-
-            customer_id = await conn.fetchval(
+        try:
+            user_id = await conn.fetchval(
                 """
-                INSERT INTO customers (clinic_id, user_id, first_name, last_name, email)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO users (clinic_id, email, password_hash, role, is_active)
+                VALUES ($1, $2, $3, 'customer', TRUE)
                 RETURNING id
                 """,
-                payload.clinic_id, user_id, payload.first_name.strip(),
-                payload.last_name.strip(), str(payload.email).lower(),
+                payload.clinic_id, str(payload.email).lower(), password_hash,
             )
+        except asyncpg.exceptions.UniqueViolationError as exc:
+            raise HTTPException(status_code=409, detail="Email already registered") from exc
+
+        customer_id = await conn.fetchval(
+            """
+            INSERT INTO customers (clinic_id, user_id, first_name, last_name, email)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+            """,
+            payload.clinic_id, user_id, payload.first_name.strip(),
+            payload.last_name.strip(), str(payload.email).lower(),
+        )
 
     return {"success": True, "user_id": int(user_id), "customer_id": int(customer_id)}
 
@@ -83,15 +84,22 @@ async def login(
     if db.pool is None:
         raise HTTPException(status_code=503, detail="database_not_ready")
 
+    # Pre-authentication has no tenant context yet. The exact email is bound
+    # transaction-locally so RLS permits only that single identity row.
     async with db.pool.acquire() as conn:
-        user = await conn.fetchrow(
-            """
-            SELECT id, clinic_id, password_hash, role, is_active
-            FROM users
-            WHERE lower(email) = lower($1)
-            """,
-            str(payload.email),
-        )
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT set_config('lydia.login_email', $1, true)",
+                str(payload.email).lower(),
+            )
+            user = await conn.fetchrow(
+                """
+                SELECT id, clinic_id, password_hash, role, is_active
+                FROM users
+                WHERE lower(email) = lower($1)
+                """,
+                str(payload.email),
+            )
 
     if user is None or not user["is_active"]:
         raise HTTPException(status_code=401, detail="Invalid credentials")
