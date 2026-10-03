@@ -1,10 +1,6 @@
 -- Lydia Core v2
 -- Multi-tenant clinic database with RLS, RBAC context, booking overlap protection,
 -- and immutable audit logs.
---
--- IMPORTANT:
--- The application database role must NOT be a PostgreSQL superuser and should
--- not own these tables, otherwise RLS can be bypassed.
 
 BEGIN;
 
@@ -43,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_clinic ON customers (clinic_id);
 
 CREATE TABLE IF NOT EXISTS staff (
     id BIGSERIAL PRIMARY KEY,
-    clinic_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -158,7 +154,7 @@ CREATE POLICY users_update ON users
 FOR UPDATE
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'admin', 'superadmin')
 )
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
