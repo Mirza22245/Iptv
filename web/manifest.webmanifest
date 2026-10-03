@@ -1,0 +1,9 @@
+{
+  "name": "Lydia",
+  "short_name": "Lydia",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "lang": "sv"
+}
