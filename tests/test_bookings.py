@@ -23,7 +23,8 @@ async def database_connection():
     try:
         await connection.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
         await connection.execute(f'CREATE SCHEMA "{schema_name}"')
-        await connection.execute(f'SET search_path TO "{schema_name}", public')
+        # Keep tests isolated from any pre-existing public tables.
+        await connection.execute(f'SET search_path TO "{schema_name}"')
 
         schema_sql = Path(__file__).parents[1].joinpath("database", "schema_v2.sql").read_text()
         await connection.execute(schema_sql)
@@ -46,124 +47,27 @@ async def set_admin_context(conn: asyncpg.Connection, clinic_id: int) -> None:
 @pytest.mark.asyncio
 async def test_overlapping_staff_bookings_are_rejected(database_connection: asyncpg.Connection) -> None:
     conn = database_connection
-
-    clinic_id = await conn.fetchval(
-        "INSERT INTO clinics (name) VALUES ('Test Clinic') RETURNING id"
-    )
+    clinic_id = await conn.fetchval("INSERT INTO clinics (name) VALUES ('Test Clinic') RETURNING id")
     await set_admin_context(conn, clinic_id)
-    customer_user_id = await conn.fetchval(
-        """
-        INSERT INTO users (clinic_id, email, password_hash, role)
-        VALUES ($1, 'customer@example.test', 'not-a-real-password', 'customer')
-        RETURNING id
-        """,
-        clinic_id,
-    )
-    staff_user_id = await conn.fetchval(
-        """
-        INSERT INTO users (clinic_id, email, password_hash, role)
-        VALUES ($1, 'staff@example.test', 'not-a-real-password', 'staff')
-        RETURNING id
-        """,
-        clinic_id,
-    )
-    customer_id = await conn.fetchval(
-        """
-        INSERT INTO customers (clinic_id, user_id, first_name, last_name, email)
-        VALUES ($1, $2, 'Test', 'Customer', 'customer@example.test')
-        RETURNING id
-        """,
-        clinic_id,
-        customer_user_id,
-    )
-    staff_id = await conn.fetchval(
-        """
-        INSERT INTO staff (clinic_id, user_id, display_name)
-        VALUES ($1, $2, 'Test Staff')
-        RETURNING id
-        """,
-        clinic_id,
-        staff_user_id,
-    )
-    service_id = await conn.fetchval(
-        """
-        INSERT INTO services (clinic_id, name, price, duration_minutes)
-        VALUES ($1, 'Test Service', 100.00, 60)
-        RETURNING id
-        """,
-        clinic_id,
-    )
-
-    await conn.execute(
-        """
-        INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range)
-        VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))
-        """,
-        clinic_id,
-        customer_id,
-        service_id,
-        staff_id,
-        "2026-07-01T10:00:00+00:00",
-        "2026-07-01T11:00:00+00:00",
-    )
-
+    customer_user_id = await conn.fetchval("INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 'customer@example.test', 'not-a-real-password', 'customer') RETURNING id", clinic_id)
+    staff_user_id = await conn.fetchval("INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 'staff@example.test', 'not-a-real-password', 'staff') RETURNING id", clinic_id)
+    customer_id = await conn.fetchval("INSERT INTO customers (clinic_id, user_id, first_name, last_name, email) VALUES ($1, $2, 'Test', 'Customer', 'customer@example.test') RETURNING id", clinic_id, customer_user_id)
+    staff_id = await conn.fetchval("INSERT INTO staff (clinic_id, user_id, display_name) VALUES ($1, $2, 'Test Staff') RETURNING id", clinic_id, staff_user_id)
+    service_id = await conn.fetchval("INSERT INTO services (clinic_id, name, price, duration_minutes) VALUES ($1, 'Test Service', 100.00, 60) RETURNING id", clinic_id)
+    await conn.execute("INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range) VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))", clinic_id, customer_id, service_id, staff_id, "2026-07-01T10:00:00+00:00", "2026-07-01T11:00:00+00:00")
     with pytest.raises(asyncpg.exceptions.ExclusionViolationError):
-        await conn.execute(
-            """
-            INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range)
-            VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))
-            """,
-            clinic_id,
-            customer_id,
-            service_id,
-            staff_id,
-            "2026-07-01T10:30:00+00:00",
-            "2026-07-01T11:30:00+00:00",
-        )
+        await conn.execute("INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range) VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))", clinic_id, customer_id, service_id, staff_id, "2026-07-01T10:30:00+00:00", "2026-07-01T11:30:00+00:00")
 
 
 @pytest.mark.asyncio
 async def test_adjacent_staff_bookings_are_allowed(database_connection: asyncpg.Connection) -> None:
     conn = database_connection
-
     clinic_id = await conn.fetchval("INSERT INTO clinics (name) VALUES ('Adjacent') RETURNING id")
     await set_admin_context(conn, clinic_id)
-    customer_user_id = await conn.fetchval(
-        "INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 'c@example.test', 'x', 'customer') RETURNING id",
-        clinic_id,
-    )
-    staff_user_id = await conn.fetchval(
-        "INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 's@example.test', 'x', 'staff') RETURNING id",
-        clinic_id,
-    )
-    customer_id = await conn.fetchval(
-        "INSERT INTO customers (clinic_id, user_id, first_name, last_name, email) VALUES ($1, $2, 'A', 'B', 'c@example.test') RETURNING id",
-        clinic_id,
-        customer_user_id,
-    )
-    staff_id = await conn.fetchval(
-        "INSERT INTO staff (clinic_id, user_id, display_name) VALUES ($1, $2, 'S') RETURNING id",
-        clinic_id,
-        staff_user_id,
-    )
-    service_id = await conn.fetchval(
-        "INSERT INTO services (clinic_id, name, price, duration_minutes) VALUES ($1, 'S', 50, 30) RETURNING id",
-        clinic_id,
-    )
-
-    for start, end in [
-        ("2026-07-01T10:00:00+00:00", "2026-07-01T10:30:00+00:00"),
-        ("2026-07-01T10:30:00+00:00", "2026-07-01T11:00:00+00:00"),
-    ]:
-        await conn.execute(
-            """
-            INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range)
-            VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))
-            """,
-            clinic_id,
-            customer_id,
-            service_id,
-            staff_id,
-            start,
-            end,
-        )
+    customer_user_id = await conn.fetchval("INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 'c@example.test', 'x', 'customer') RETURNING id", clinic_id)
+    staff_user_id = await conn.fetchval("INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 's@example.test', 'x', 'staff') RETURNING id", clinic_id)
+    customer_id = await conn.fetchval("INSERT INTO customers (clinic_id, user_id, first_name, last_name, email) VALUES ($1, $2, 'A', 'B', 'c@example.test') RETURNING id", clinic_id, customer_user_id)
+    staff_id = await conn.fetchval("INSERT INTO staff (clinic_id, user_id, display_name) VALUES ($1, $2, 'S') RETURNING id", clinic_id, staff_user_id)
+    service_id = await conn.fetchval("INSERT INTO services (clinic_id, name, price, duration_minutes) VALUES ($1, 'S', 50, 30) RETURNING id", clinic_id)
+    for start, end in [("2026-07-01T10:00:00+00:00", "2026-07-01T10:30:00+00:00"), ("2026-07-01T10:30:00+00:00", "2026-07-01T11:00:00+00:00")]:
+        await conn.execute("INSERT INTO bookings (clinic_id, customer_id, service_id, staff_id, slot_range) VALUES ($1, $2, $3, $4, tstzrange($5, $6, '[)'))", clinic_id, customer_id, service_id, staff_id, start, end)
