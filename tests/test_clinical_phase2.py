@@ -52,11 +52,9 @@ async def test_signed_journal_is_immutable(clinical_connection: asyncpg.Connecti
     with pytest.raises(asyncpg.exceptions.PostgresError) as update_error:
         await conn.execute("UPDATE journal_notes SET assessment='Tampered' WHERE id=$1", journal)
     assert update_error.value.sqlstate == "42501"
-
     with pytest.raises(asyncpg.exceptions.PostgresError) as delete_error:
         await conn.execute("DELETE FROM journal_notes WHERE id=$1", journal)
     assert delete_error.value.sqlstate == "42501"
-
     assert await conn.fetchval("SELECT assessment FROM journal_notes WHERE id=$1", journal) == "Original"
 
 
@@ -79,4 +77,4 @@ async def test_clinical_records_are_tenant_isolated(clinical_connection: asyncpg
     await conn.execute("INSERT INTO journal_notes(clinic_id,customer_id,author_id,assessment) VALUES($1,$2,$3,'B')", clinic_b, customer_b, user_b)
 
     rows = await conn.fetch("SELECT clinic_id,assessment FROM journal_notes ORDER BY id")
-    assert rows == [{"clinic_id": clinic_b, "assessment": "B"}]
+    assert [(row["clinic_id"], row["assessment"]) for row in rows] == [(clinic_b, "B")]
