@@ -62,6 +62,7 @@
     <div id="staffView" class="hidden">
       <div class="card"><h2>Dagens schema</h2><div id="staffBookings" class="muted">Laddar…</div></div>
       <div class="card" style="margin-top:18px"><h2>Kundkort & journal</h2><div class="row"><select id="staffCustomerPicker" style="flex:1;min-width:260px"></select><button onclick="openClinicalFromPicker('staffCustomerPicker')">Öppna kundkort</button></div></div>
+      <div class="card" style="margin-top:18px"><h2>Verksamhet</h2><button onclick="openBusinessWorkspace()">Öppna kassa & lager</button><div id="businessWorkspace" class="hidden" style="margin-top:16px"></div></div>
     </div>
 
     <div id="adminView" class="hidden">
@@ -73,6 +74,7 @@
         <div class="card"><h2>Tjänster</h2><div id="adminServices" class="muted">Laddar…</div></div>
       </div>
       <div class="card" style="margin-top:18px"><h2>Kundkort & journal</h2><div class="row"><select id="adminCustomerPicker" style="flex:1;min-width:260px"></select><button onclick="openClinicalFromPicker('adminCustomerPicker')">Öppna kundkort</button></div></div>
+      <div class="card" style="margin-top:18px"><h2>Rapporter · Kassa · Lager · Integrationer</h2><button onclick="openBusinessWorkspace()">Öppna verksamhetsmodul</button><div id="businessWorkspace" class="hidden" style="margin-top:16px"></div></div>
     </div>
 
     <div id="clinicalWorkspace" class="hidden" style="margin-top:18px"></div>
@@ -81,5 +83,6 @@
 </main>
 <script src="app.js"></script>
 <script src="clinical_media.js"></script>
+<script src="business.js"></script>
 </body>
 </html>
