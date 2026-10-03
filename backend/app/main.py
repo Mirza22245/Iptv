@@ -1,8 +1,10 @@
 """Lydia Core FastAPI application."""
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import get_database, shutdown_database, startup_database
 from app.routers.auth import router as auth_router
@@ -20,9 +22,23 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Lydia Core API",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
+
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 app.include_router(auth_router)
 app.include_router(bookings_router)
