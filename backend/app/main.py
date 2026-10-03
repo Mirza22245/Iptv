@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import get_database, shutdown_database, startup_database
+from app.routers.admin import router as dashboard_router
 from app.routers.auth import router as auth_router
 from app.routers.bookings import router as bookings_router
 
@@ -22,7 +23,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Lydia Core API",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -42,6 +43,7 @@ if cors_origins:
 
 app.include_router(auth_router)
 app.include_router(bookings_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/health", tags=["system"])
