@@ -131,18 +131,44 @@ ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 
+-- Users are readable only inside the active tenant. A normal customer may
+-- only see their own row; staff/admin roles may see tenant users. Creation is
+-- deliberately restricted to privileged roles so test/setup and production
+-- provisioning behave consistently under FORCE ROW LEVEL SECURITY.
 DROP POLICY IF EXISTS users_tenant_isolation ON users;
 CREATE POLICY users_tenant_isolation ON users
-FOR ALL
+FOR SELECT
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND (
         id = lydia_context_bigint('lydia.current_user_id')
         OR lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
     )
-)
+);
+
+DROP POLICY IF EXISTS users_insert ON users;
+CREATE POLICY users_insert ON users
+FOR INSERT
 WITH CHECK (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+);
+
+DROP POLICY IF EXISTS users_update ON users;
+CREATE POLICY users_update ON users
+FOR UPDATE
+USING (
+    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+)
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
+
+DROP POLICY IF EXISTS users_delete ON users;
+CREATE POLICY users_delete ON users
+FOR DELETE
+USING (
+    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+    AND lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
 );
 
 DROP POLICY IF EXISTS customers_tenant_isolation ON customers;
@@ -209,7 +235,11 @@ USING (
 
 DROP POLICY IF EXISTS audit_insert ON audit_logs;
 CREATE POLICY audit_insert ON audit_logs FOR INSERT
-WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
+WITH CHECK (
+    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+);
+
 DROP POLICY IF EXISTS audit_select ON audit_logs;
 CREATE POLICY audit_select ON audit_logs FOR SELECT
 USING (
