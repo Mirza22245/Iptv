@@ -36,6 +36,31 @@ jobs:
           GRANT CONNECT, TEMPORARY, CREATE ON DATABASE lydia TO lydia_app;
           SQL
 
+      - name: Validate RLS test role
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 <<'SQL'
+          SELECT rolname, rolsuper, rolbypassrls
+          FROM pg_roles
+          WHERE rolname = 'lydia_app';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_roles
+              WHERE rolname = 'lydia_app'
+                AND rolsuper = false
+                AND rolbypassrls = false
+            ) THEN
+              RAISE EXCEPTION 'lydia_app must be NOSUPERUSER and NOBYPASSRLS';
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Validate Phase 2 migration files
+        run: |
+          test -s database/schema_v2.sql
+          test -s database/phase2_clinical.sql
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
