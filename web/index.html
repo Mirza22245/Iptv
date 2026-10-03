@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="Lydia bokningsportal och dashboard">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Lydia</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e5e7eb;background:#020617}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#172554 0,#020617 45%)}
+    main{max-width:1100px;margin:auto;padding:28px 18px 60px}.top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:28px}
+    h1{margin:0;font-size:30px}h2{margin-top:0}.muted{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+    .card{background:rgba(15,23,42,.88);border:1px solid #334155;border-radius:18px;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+    label{display:block;font-size:13px;color:#94a3b8;margin:12px 0 6px}input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid #475569;background:#0f172a;color:#fff}
+    button{border:0;border-radius:10px;padding:11px 15px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#334155}button.danger{background:#b91c1c}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.hidden{display:none!important}.booking{padding:14px 0;border-bottom:1px solid #334155}.booking:last-child{border-bottom:0}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#1e293b;font-size:12px}.notice{margin:14px 0;padding:12px;border-radius:10px;background:#172554;color:#bfdbfe}.error{background:#450a0a;color:#fecaca}
+    footer{margin-top:30px;color:#64748b;font-size:12px}
+  </style>
+</head>
+<body>
+<main>
+  <div class="top"><div><h1>Lydia</h1><div class="muted">Bokning · kundportal · dashboard</div></div><button id="logout" class="secondary hidden">Logga ut</button></div>
+  <div id="message" class="notice hidden"></div>
+
+  <section id="auth" class="grid">
+    <div class="card"><h2>Logga in</h2>
+      <label>E-post</label><input id="loginEmail" type="email" autocomplete="email">
+      <label>Lösenord</label><input id="loginPassword" type="password" autocomplete="current-password">
+      <div style="margin-top:16px"><button id="loginBtn">Logga in</button></div>
+    </div>
+    <div class="card"><h2>Skapa konto</h2>
+      <label>Klinik-ID</label><input id="regClinic" type="number" min="1">
+      <label>Förnamn</label><input id="regFirst">
+      <label>Efternamn</label><input id="regLast">
+      <label>E-post</label><input id="regEmail" type="email">
+      <label>Lösenord (min 12 tecken)</label><input id="regPassword" type="password">
+      <div style="margin-top:16px"><button id="registerBtn">Skapa konto</button></div>
+    </div>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="grid">
+      <div class="card"><h2>Mina bokningar</h2><div id="bookings" class="muted">Laddar…</div></div>
+      <div class="card"><h2>Ny bokning</h2>
+        <label>Tjänst-ID</label><input id="serviceId" type="number" min="1">
+        <label>Personal-ID</label><input id="staffId" type="number" min="1">
+        <label>Starttid</label><input id="slotStart" type="datetime-local">
+        <div style="margin-top:16px"><button id="bookBtn">Boka</button></div>
+        <p class="muted">Tjänster och personal administreras i backend. Ange deras ID här tills admin-dashboardens CRUD är ansluten.</p>
+      </div>
+    </div>
+  </section>
+  <footer>© Lydia · säker tenant-isolering via PostgreSQL RLS</footer>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
