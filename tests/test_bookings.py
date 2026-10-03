@@ -34,6 +34,15 @@ async def database_connection():
         await connection.close()
 
 
+async def set_admin_context(conn: asyncpg.Connection, clinic_id: int) -> None:
+    await conn.execute(
+        "SELECT set_config('lydia.current_clinic_id', $1, false), "
+        "set_config('lydia.current_user_id', '0', false), "
+        "set_config('lydia.current_role', 'admin', false)",
+        str(clinic_id),
+    )
+
+
 @pytest.mark.asyncio
 async def test_overlapping_staff_bookings_are_rejected(database_connection: asyncpg.Connection) -> None:
     conn = database_connection
@@ -41,6 +50,7 @@ async def test_overlapping_staff_bookings_are_rejected(database_connection: asyn
     clinic_id = await conn.fetchval(
         "INSERT INTO clinics (name) VALUES ('Test Clinic') RETURNING id"
     )
+    await set_admin_context(conn, clinic_id)
     customer_user_id = await conn.fetchval(
         """
         INSERT INTO users (clinic_id, email, password_hash, role)
@@ -117,6 +127,7 @@ async def test_adjacent_staff_bookings_are_allowed(database_connection: asyncpg.
     conn = database_connection
 
     clinic_id = await conn.fetchval("INSERT INTO clinics (name) VALUES ('Adjacent') RETURNING id")
+    await set_admin_context(conn, clinic_id)
     customer_user_id = await conn.fetchval(
         "INSERT INTO users (clinic_id, email, password_hash, role) VALUES ($1, 'c@example.test', 'x', 'customer') RETURNING id",
         clinic_id,
