@@ -37,9 +37,12 @@ async def register_customer(
     payload: RegisterRequest,
     db: Database = Depends(get_database),
 ) -> dict[str, Any]:
+    if db.pool is None:
+        raise HTTPException(status_code=503, detail="database_not_ready")
+
     password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
 
-    async with db.pool.acquire() as conn if db.pool is not None else _no_connection():
+    async with db.pool.acquire() as conn:
         async with conn.transaction():
             clinic_exists = await conn.fetchval(
                 "SELECT 1 FROM clinics WHERE id = $1", payload.clinic_id
@@ -102,15 +105,3 @@ async def login(
         "role": user["role"],
     })
     return {"access_token": token, "token_type": "bearer"}
-
-
-class _NoConnection:
-    async def __aenter__(self):
-        raise HTTPException(status_code=503, detail="database_not_ready")
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-
-def _no_connection() -> _NoConnection:
-    return _NoConnection()
