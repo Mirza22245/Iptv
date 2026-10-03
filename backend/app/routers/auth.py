@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import asyncpg
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth import create_access_token
 from app.database import Database, get_database
@@ -15,21 +16,44 @@ from app.database import Database, get_database
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 
 
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _normalize_email(value: str) -> str:
+    email = value.strip().lower()
+    # EmailStr intentionally rejects special-use domains such as .local.
+    # Lydia's local development environment uses lydia.local addresses, so
+    # validate the shape here while still accepting those development emails.
+    if not _EMAIL_RE.fullmatch(email):
+        raise ValueError("Enter a valid email address")
+    return email
+
+
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     clinic_id: int = Field(gt=0)
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=12, max_length=128)
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _normalize_email(value)
 
 
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _normalize_email(value)
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -58,7 +82,7 @@ async def register_customer(
                 VALUES ($1, $2, $3, 'customer', TRUE)
                 RETURNING id
                 """,
-                payload.clinic_id, str(payload.email).lower(), password_hash,
+                payload.clinic_id, payload.email,
             )
         except asyncpg.exceptions.UniqueViolationError as exc:
             raise HTTPException(status_code=409, detail="Email already registered") from exc
@@ -70,7 +94,7 @@ async def register_customer(
             RETURNING id
             """,
             payload.clinic_id, user_id, payload.first_name.strip(),
-            payload.last_name.strip(), str(payload.email).lower(),
+            payload.last_name.strip(), payload.email,
         )
 
     return {"success": True, "user_id": int(user_id), "customer_id": int(customer_id)}
@@ -90,7 +114,7 @@ async def login(
         async with conn.transaction():
             await conn.execute(
                 "SELECT set_config('lydia.login_email', $1, true)",
-                str(payload.email).lower(),
+                payload.email,
             )
             user = await conn.fetchrow(
                 """
@@ -98,7 +122,7 @@ async def login(
                 FROM users
                 WHERE lower(email) = lower($1)
                 """,
-                str(payload.email),
+                payload.email,
             )
 
     if user is None or not user["is_active"]:
