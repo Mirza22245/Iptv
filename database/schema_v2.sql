@@ -10,18 +10,12 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
--- ============================================================
--- 1. CLINICS
--- ============================================================
 CREATE TABLE IF NOT EXISTS clinics (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- 2. USERS / RBAC
--- ============================================================
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -33,13 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE (clinic_id, id),
     UNIQUE (email)
 );
+CREATE INDEX IF NOT EXISTS idx_users_clinic_role ON users (clinic_id, role);
 
-CREATE INDEX IF NOT EXISTS idx_users_clinic_role
-    ON users (clinic_id, role);
-
--- ============================================================
--- 3. CUSTOMERS
--- ============================================================
 CREATE TABLE IF NOT EXISTS customers (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -50,13 +39,8 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (clinic_id, id)
 );
+CREATE INDEX IF NOT EXISTS idx_customers_clinic ON customers (clinic_id);
 
-CREATE INDEX IF NOT EXISTS idx_customers_clinic
-    ON customers (clinic_id);
-
--- ============================================================
--- 4. STAFF
--- ============================================================
 CREATE TABLE IF NOT EXISTS staff (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -65,13 +49,8 @@ CREATE TABLE IF NOT EXISTS staff (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (clinic_id, id)
 );
+CREATE INDEX IF NOT EXISTS idx_staff_clinic_active ON staff (clinic_id, is_active);
 
-CREATE INDEX IF NOT EXISTS idx_staff_clinic_active
-    ON staff (clinic_id, is_active);
-
--- ============================================================
--- 5. SERVICES
--- ============================================================
 CREATE TABLE IF NOT EXISTS services (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -81,13 +60,8 @@ CREATE TABLE IF NOT EXISTS services (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (clinic_id, id)
 );
+CREATE INDEX IF NOT EXISTS idx_services_clinic_active ON services (clinic_id, is_active);
 
-CREATE INDEX IF NOT EXISTS idx_services_clinic_active
-    ON services (clinic_id, is_active);
-
--- ============================================================
--- 6. BOOKINGS
--- ============================================================
 CREATE TABLE IF NOT EXISTS bookings (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -98,38 +72,19 @@ CREATE TABLE IF NOT EXISTS bookings (
     status VARCHAR(20) NOT NULL DEFAULT 'confirmed'
         CHECK (status IN ('confirmed', 'cancelled', 'completed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_booking_customer_same_clinic
-        FOREIGN KEY (clinic_id, customer_id)
-        REFERENCES customers (clinic_id, id)
-        ON DELETE CASCADE,
-    CONSTRAINT fk_booking_service_same_clinic
-        FOREIGN KEY (clinic_id, service_id)
-        REFERENCES services (clinic_id, id)
-        ON DELETE RESTRICT,
-    CONSTRAINT fk_booking_staff_same_clinic
-        FOREIGN KEY (clinic_id, staff_id)
-        REFERENCES staff (clinic_id, id)
-        ON DELETE RESTRICT,
-    CONSTRAINT booking_slot_nonempty
-        CHECK (NOT isempty(slot_range)),
-    EXCLUDE USING gist (
-        staff_id WITH =,
-        slot_range WITH &&
-    ) WHERE (status <> 'cancelled')
+    CONSTRAINT fk_booking_customer_same_clinic FOREIGN KEY (clinic_id, customer_id)
+        REFERENCES customers (clinic_id, id) ON DELETE CASCADE,
+    CONSTRAINT fk_booking_service_same_clinic FOREIGN KEY (clinic_id, service_id)
+        REFERENCES services (clinic_id, id) ON DELETE RESTRICT,
+    CONSTRAINT fk_booking_staff_same_clinic FOREIGN KEY (clinic_id, staff_id)
+        REFERENCES staff (clinic_id, id) ON DELETE RESTRICT,
+    CONSTRAINT booking_slot_nonempty CHECK (NOT isempty(slot_range)),
+    EXCLUDE USING gist (staff_id WITH =, slot_range WITH &&) WHERE (status <> 'cancelled')
 );
+CREATE INDEX IF NOT EXISTS idx_bookings_clinic_start ON bookings (clinic_id, lower(slot_range));
+CREATE INDEX IF NOT EXISTS idx_bookings_customer ON bookings (clinic_id, customer_id, lower(slot_range));
+CREATE INDEX IF NOT EXISTS idx_bookings_staff ON bookings (clinic_id, staff_id, lower(slot_range));
 
-CREATE INDEX IF NOT EXISTS idx_bookings_clinic_start
-    ON bookings (clinic_id, lower(slot_range));
-
-CREATE INDEX IF NOT EXISTS idx_bookings_customer
-    ON bookings (clinic_id, customer_id, lower(slot_range));
-
-CREATE INDEX IF NOT EXISTS idx_bookings_staff
-    ON bookings (clinic_id, staff_id, lower(slot_range));
-
--- ============================================================
--- 7. IMMUTABLE AUDIT LOG
--- ============================================================
 CREATE TABLE IF NOT EXISTS audit_logs (
     id BIGSERIAL PRIMARY KEY,
     clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
@@ -141,50 +96,28 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     performed_by_user_id BIGINT,
     request_id UUID
 );
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_clinic_time
-    ON audit_logs (clinic_id, performed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_clinic_time ON audit_logs (clinic_id, performed_at DESC);
 
 CREATE OR REPLACE FUNCTION prevent_audit_modification()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Audit logs are immutable: UPDATE and DELETE are forbidden.'
-        USING ERRCODE = '42501';
+    RAISE EXCEPTION 'Audit logs are immutable: UPDATE and DELETE are forbidden.' USING ERRCODE = '42501';
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS trg_prevent_audit_update ON audit_logs;
-CREATE TRIGGER trg_prevent_audit_update
-BEFORE UPDATE ON audit_logs
-FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
-
+CREATE TRIGGER trg_prevent_audit_update BEFORE UPDATE ON audit_logs FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
 DROP TRIGGER IF EXISTS trg_prevent_audit_delete ON audit_logs;
-CREATE TRIGGER trg_prevent_audit_delete
-BEFORE DELETE ON audit_logs
-FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
+CREATE TRIGGER trg_prevent_audit_delete BEFORE DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
 
--- ============================================================
--- 8. RLS CONTEXT HELPERS
--- ============================================================
 CREATE OR REPLACE FUNCTION lydia_context_bigint(setting_name TEXT)
-RETURNS BIGINT
-LANGUAGE SQL
-STABLE
-AS $$
+RETURNS BIGINT LANGUAGE SQL STABLE AS $$
     SELECT NULLIF(current_setting(setting_name, true), '')::BIGINT;
 $$;
-
 CREATE OR REPLACE FUNCTION lydia_context_text(setting_name TEXT)
-RETURNS TEXT
-LANGUAGE SQL
-STABLE
-AS $$
+RETURNS TEXT LANGUAGE SQL STABLE AS $$
     SELECT NULLIF(current_setting(setting_name, true), '');
 $$;
 
--- ============================================================
--- 9. ENABLE / FORCE RLS
--- ============================================================
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
@@ -198,9 +131,6 @@ ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 
--- ============================================================
--- 10. USERS RLS
--- ============================================================
 DROP POLICY IF EXISTS users_tenant_isolation ON users;
 CREATE POLICY users_tenant_isolation ON users
 FOR ALL
@@ -215,9 +145,6 @@ WITH CHECK (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
 );
 
--- ============================================================
--- 11. CUSTOMERS RLS
--- ============================================================
 DROP POLICY IF EXISTS customers_tenant_isolation ON customers;
 CREATE POLICY customers_tenant_isolation ON customers
 FOR ALL
@@ -228,106 +155,63 @@ USING (
         OR lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
     )
 )
-WITH CHECK (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-);
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
--- ============================================================
--- 12. STAFF RLS
--- ============================================================
 DROP POLICY IF EXISTS staff_tenant_isolation ON staff;
-CREATE POLICY staff_tenant_isolation ON staff
-FOR ALL
+CREATE POLICY staff_tenant_isolation ON staff FOR ALL
 USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id'))
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
--- ============================================================
--- 13. SERVICES RLS
--- ============================================================
 DROP POLICY IF EXISTS services_tenant_isolation ON services;
-CREATE POLICY services_tenant_isolation ON services
-FOR ALL
+CREATE POLICY services_tenant_isolation ON services FOR ALL
 USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id'))
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
--- ============================================================
--- 14. BOOKINGS RLS
--- ============================================================
 DROP POLICY IF EXISTS bookings_tenant_isolation ON bookings;
-CREATE POLICY bookings_tenant_isolation ON bookings
-FOR SELECT
+CREATE POLICY bookings_tenant_isolation ON bookings FOR SELECT
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND (
-        customer_id IN (
-            SELECT c.id
-            FROM customers c
-            WHERE c.user_id = lydia_context_bigint('lydia.current_user_id')
-        )
-        OR staff_id IN (
-            SELECT s.id
-            FROM staff s
-            WHERE s.user_id = lydia_context_bigint('lydia.current_user_id')
-        )
+        customer_id IN (SELECT c.id FROM customers c WHERE c.user_id = lydia_context_bigint('lydia.current_user_id'))
+        OR staff_id IN (SELECT s.id FROM staff s WHERE s.user_id = lydia_context_bigint('lydia.current_user_id'))
         OR lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
     )
 );
 
 DROP POLICY IF EXISTS bookings_customer_insert ON bookings;
-CREATE POLICY bookings_customer_insert ON bookings
-FOR INSERT
+CREATE POLICY bookings_customer_insert ON bookings FOR INSERT
 WITH CHECK (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND (
-        customer_id IN (
-            SELECT c.id
-            FROM customers c
-            WHERE c.user_id = lydia_context_bigint('lydia.current_user_id')
-        )
+        customer_id IN (SELECT c.id FROM customers c WHERE c.user_id = lydia_context_bigint('lydia.current_user_id'))
         OR lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
     )
 );
 
 DROP POLICY IF EXISTS bookings_update ON bookings;
-CREATE POLICY bookings_update ON bookings
-FOR UPDATE
+CREATE POLICY bookings_update ON bookings FOR UPDATE
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND (
-        customer_id IN (
-            SELECT c.id FROM customers c
-            WHERE c.user_id = lydia_context_bigint('lydia.current_user_id')
-        )
-        OR staff_id IN (
-            SELECT s.id FROM staff s
-            WHERE s.user_id = lydia_context_bigint('lydia.current_user_id')
-        )
+        customer_id IN (SELECT c.id FROM customers c WHERE c.user_id = lydia_context_bigint('lydia.current_user_id'))
+        OR staff_id IN (SELECT s.id FROM staff s WHERE s.user_id = lydia_context_bigint('lydia.current_user_id'))
         OR lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
     )
 )
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
 DROP POLICY IF EXISTS bookings_delete ON bookings;
-CREATE POLICY bookings_delete ON bookings
-FOR DELETE
+CREATE POLICY bookings_delete ON bookings FOR DELETE
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
 );
 
--- ============================================================
--- 15. AUDIT RLS
--- ============================================================
 DROP POLICY IF EXISTS audit_insert ON audit_logs;
-CREATE POLICY audit_insert ON audit_logs
-FOR INSERT
-WITH CHECK (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-);
-
+CREATE POLICY audit_insert ON audit_logs FOR INSERT
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 DROP POLICY IF EXISTS audit_select ON audit_logs;
-CREATE POLICY audit_select ON audit_logs
-FOR SELECT
+CREATE POLICY audit_select ON audit_logs FOR SELECT
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
