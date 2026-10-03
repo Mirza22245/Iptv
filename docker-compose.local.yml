@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: lydia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lydia
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: lydia-local-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - lydia_postgres_data:/var/lib/postgresql/data
+      - ./database/init/00-create-role.sql:/docker-entrypoint-initdb.d/00-create-role.sql:ro
+      - ./database/schema_v2.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - ./database/init/20-grants.sql:/docker-entrypoint-initdb.d/20-grants.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lydia"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+    container_name: lydia-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      JWT_SECRET_KEY: lydia-local-development-secret-change-me
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_MINUTES: 60
+      DATABASE_URL: postgresql://lydia_app:lydia-test-password@postgres:5432/lydia
+      DB_POOL_MAX: 10
+      DB_COMMAND_TIMEOUT: 10
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8000:8000"
+
+  web:
+    image: nginx:alpine
+    container_name: lydia-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+
+volumes:
+  lydia_postgres_data:
