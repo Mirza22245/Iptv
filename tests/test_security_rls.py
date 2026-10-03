@@ -21,7 +21,9 @@ async def database_connection():
     try:
         await connection.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
         await connection.execute(f'CREATE SCHEMA "{schema_name}"')
-        await connection.execute(f'SET search_path TO "{schema_name}", public')
+        # schema_v2.sql uses CREATE TABLE IF NOT EXISTS. Keep public out of the
+        # search path so tests cannot accidentally reuse production tables.
+        await connection.execute(f'SET search_path TO "{schema_name}"')
         schema_sql = Path(__file__).parents[1].joinpath("database", "schema_v2.sql").read_text()
         await connection.execute(schema_sql)
         yield connection
@@ -45,7 +47,6 @@ async def test_customer_isolated_from_other_customer_and_tenant(database_connect
     conn = database_connection
     clinic_a = await conn.fetchval("INSERT INTO clinics (name) VALUES ('A') RETURNING id")
     clinic_b = await conn.fetchval("INSERT INTO clinics (name) VALUES ('B') RETURNING id")
-
     await set_context(conn, clinic_id=clinic_a, user_id=0, role="admin")
     user_a = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'a@test','x','customer') RETURNING id", clinic_a)
     user_a2 = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'a2@test','x','customer') RETURNING id", clinic_a)
@@ -54,29 +55,24 @@ async def test_customer_isolated_from_other_customer_and_tenant(database_connect
     service_a = await conn.fetchval("INSERT INTO services (clinic_id,name,price,duration_minutes) VALUES ($1,'A service',100,30) RETURNING id", clinic_a)
     staff_a_user = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'staff-a@test','x','staff') RETURNING id", clinic_a)
     staff_a = await conn.fetchval("INSERT INTO staff (clinic_id,user_id,display_name) VALUES ($1,$2,'Staff A') RETURNING id", clinic_a, staff_a_user)
-
     await set_context(conn, clinic_id=clinic_b, user_id=0, role="admin")
     user_b = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'b@test','x','customer') RETURNING id", clinic_b)
     customer_b = await conn.fetchval("INSERT INTO customers (clinic_id,user_id,first_name,last_name,email) VALUES ($1,$2,'B','One','b@test') RETURNING id", clinic_b, user_b)
     service_b = await conn.fetchval("INSERT INTO services (clinic_id,name,price,duration_minutes) VALUES ($1,'B service',200,30) RETURNING id", clinic_b)
     staff_b_user = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'staff-b@test','x','staff') RETURNING id", clinic_b)
     staff_b = await conn.fetchval("INSERT INTO staff (clinic_id,user_id,display_name) VALUES ($1,$2,'Staff B') RETURNING id", clinic_b, staff_b_user)
-
     insert_sql = "INSERT INTO bookings (clinic_id,customer_id,service_id,staff_id,slot_range) VALUES ($1,$2,$3,$4,tstzrange($5,$6,'[)'))"
     await set_context(conn, clinic_id=clinic_a, user_id=0, role="admin")
     await conn.execute(insert_sql, clinic_a, customer_a, service_a, staff_a, "2026-08-01T10:00:00+00:00", "2026-08-01T10:30:00+00:00")
     await conn.execute(insert_sql, clinic_a, customer_a2, service_a, staff_a, "2026-08-01T11:00:00+00:00", "2026-08-01T11:30:00+00:00")
     await set_context(conn, clinic_id=clinic_b, user_id=0, role="admin")
     await conn.execute(insert_sql, clinic_b, customer_b, service_b, staff_b, "2026-08-01T10:00:00+00:00", "2026-08-01T10:30:00+00:00")
-
     await set_context(conn, clinic_id=clinic_a, user_id=user_a, role="customer")
     visible = await conn.fetch("SELECT customer_id FROM bookings ORDER BY id")
     assert [row["customer_id"] for row in visible] == [customer_a]
-
     await set_context(conn, clinic_id=clinic_a, user_id=staff_a_user, role="staff")
     staff_visible = await conn.fetch("SELECT customer_id FROM bookings ORDER BY id")
     assert [row["customer_id"] for row in staff_visible] == [customer_a, customer_a2]
-
     await set_context(conn, clinic_id=clinic_b, user_id=staff_b_user, role="staff")
     tenant_visible = await conn.fetch("SELECT clinic_id FROM bookings")
     assert [row["clinic_id"] for row in tenant_visible] == [clinic_b]
