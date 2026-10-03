@@ -29,10 +29,11 @@ if ! docker exec lydia-postgres pg_isready -U postgres -d lydia >/dev/null 2>&1;
   exit 1
 fi
 
-echo "Applying database schema, Phase 2 migration and local test data..."
+echo "Applying database schema, Phase 2/3 migrations and local test data..."
 docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/init/00-create-role.sql
 docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/schema_v2.sql
 docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/phase2_clinical.sql
+docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/phase3_business.sql
 docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/init/20-grants.sql
 docker exec -i lydia-postgres psql -v ON_ERROR_STOP=1 -U postgres -d lydia < database/local_seed.sql
 
