@@ -31,6 +31,20 @@ SELECT clinic.id, 'customer@lydia.local', crypt('Customer123456!', gen_salt('bf'
 FROM clinic
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE lower(email) = 'customer@lydia.local');
 
+-- Keep the local test credentials deterministic when the persistent PostgreSQL
+-- volume already contains these accounts. This is deliberately local-only.
+UPDATE users
+SET password_hash = crypt('Admin123456!', gen_salt('bf')), role = 'admin', is_active = TRUE
+WHERE lower(email) = 'admin@lydia.local';
+
+UPDATE users
+SET password_hash = crypt('Staff123456!', gen_salt('bf')), role = 'staff', is_active = TRUE
+WHERE lower(email) = 'staff@lydia.local';
+
+UPDATE users
+SET password_hash = crypt('Customer123456!', gen_salt('bf')), role = 'customer', is_active = TRUE
+WHERE lower(email) = 'customer@lydia.local';
+
 WITH u AS (
     SELECT id, clinic_id FROM users WHERE lower(email) = 'customer@lydia.local' LIMIT 1
 )
