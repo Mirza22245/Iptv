@@ -11,6 +11,7 @@ from app.routers.admin import router as dashboard_router
 from app.routers.auth import router as auth_router
 from app.routers.bookings import router as bookings_router
 from app.routers.clinical import router as clinical_router
+from app.routers.clinical_media import router as clinical_media_router
 
 
 @asynccontextmanager
@@ -38,6 +39,7 @@ app.include_router(auth_router)
 app.include_router(bookings_router)
 app.include_router(dashboard_router)
 app.include_router(clinical_router)
+app.include_router(clinical_media_router)
 
 
 @app.get("/health", tags=["system"])
