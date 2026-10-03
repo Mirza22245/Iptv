@@ -1,6 +1,7 @@
 """Clinical customer cards, journal notes, templates, consents and image metadata."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -131,12 +132,11 @@ async def update_journal(journal_id: int, payload: JournalUpdate, token: dict[st
             raise HTTPException(status_code=404, detail="Journal not found")
         if journal["is_signed"]:
             raise HTTPException(status_code=403, detail="Signed journals are locked and cannot be modified")
-        allowed = set(JournalUpdate.model_fields)
-        fields = [key for key in values if key in allowed]
+        fields = list(values)
         assignments = ", ".join(f"{key}=${i+3}" for i, key in enumerate(fields))
         params = [journal_id, clinic_id, *[values[key] for key in fields]]
         await conn.execute(f"UPDATE journal_notes SET {assignments}, updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND clinic_id=$2 AND is_signed=FALSE", *params)
-        await conn.execute("INSERT INTO audit_logs (clinic_id, action, target_type, target_id, new_values, performed_by_user_id) VALUES ($1,'UPDATE_JOURNAL','journal_note',$2,$3::jsonb,$4)", clinic_id, journal_id, "{}", user_id)
+        await conn.execute("INSERT INTO audit_logs (clinic_id, action, target_type, target_id, new_values, performed_by_user_id) VALUES ($1,'UPDATE_JOURNAL','journal_note',$2,$3::jsonb,$4)", clinic_id, journal_id, json.dumps(values), user_id)
         return {"success": True, "journal_id": journal_id}
 
 
@@ -165,7 +165,7 @@ async def list_templates(token: dict[str, Any] = Depends(require_role("staff", "
 @router.post("/templates", status_code=status.HTTP_201_CREATED)
 async def create_template(payload: TemplateCreate, token: dict[str, Any] = Depends(require_role("admin", "superadmin")), db: Database = Depends(get_database)):
     async with db.transaction(clinic_id=int(token["clinic_id"]), user_id=int(token["sub"]), role=str(token["role"])) as conn:
-        row = await conn.fetchrow("INSERT INTO journal_templates (clinic_id,title,structure_json,created_by_user_id) VALUES ($1,$2,$3::jsonb,$4) RETURNING *", int(token["clinic_id"]), payload.title, payload.structure_json, int(token["sub"]))
+        row = await conn.fetchrow("INSERT INTO journal_templates (clinic_id,title,structure_json,created_by_user_id) VALUES ($1,$2,$3::jsonb,$4) RETURNING *", int(token["clinic_id"]), payload.title, json.dumps(payload.structure_json), int(token["sub"]))
         return dict(row)
 
 
