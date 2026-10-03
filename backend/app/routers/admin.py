@@ -15,11 +15,22 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 @router.get("/me")
 async def dashboard_me(
     token_data: dict[str, Any] = Depends(require_role("customer", "staff", "admin", "superadmin")),
+    db: Database = Depends(get_database),
 ) -> dict[str, Any]:
+    clinic_id = int(token_data["clinic_id"])
+    user_id = int(token_data["sub"])
+    role = str(token_data["role"])
+    async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
+        customer_id = await conn.fetchval(
+            "SELECT id FROM customers WHERE clinic_id=$1 AND user_id=$2 LIMIT 1",
+            clinic_id,
+            user_id,
+        )
     return {
-        "user_id": int(token_data["sub"]),
-        "clinic_id": int(token_data["clinic_id"]),
-        "role": str(token_data["role"]),
+        "user_id": user_id,
+        "clinic_id": clinic_id,
+        "role": role,
+        "customer_id": int(customer_id) if customer_id is not None else None,
     }
 
 
@@ -140,7 +151,7 @@ async def staff_today(
     async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=str(token_data["role"])) as conn:
         rows = await conn.fetch(
             """
-            SELECT b.id, lower(b.slot_range) AS slot_start, upper(b.slot_range) AS slot_end,
+            SELECT b.id, b.customer_id, lower(b.slot_range) AS slot_start, upper(b.slot_range) AS slot_end,
                    b.status, c.first_name || ' ' || c.last_name AS customer_name,
                    c.email AS customer_email, s.name AS service_name, s.price
             FROM bookings b
