@@ -5,6 +5,7 @@
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS clinics (
     id BIGSERIAL PRIMARY KEY,
@@ -154,7 +155,7 @@ CREATE POLICY users_update ON users
 FOR UPDATE
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'admin', 'superadmin')
+    AND lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
 )
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
@@ -167,8 +168,7 @@ USING (
 );
 
 DROP POLICY IF EXISTS customers_tenant_isolation ON customers;
-CREATE POLICY customers_tenant_isolation ON customers
-FOR ALL
+CREATE POLICY customers_tenant_isolation ON customers FOR ALL
 USING (
     clinic_id = lydia_context_bigint('lydia.current_clinic_id')
     AND (
