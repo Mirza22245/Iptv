@@ -98,8 +98,6 @@ CREATE TABLE IF NOT EXISTS bookings (
     status VARCHAR(20) NOT NULL DEFAULT 'confirmed'
         CHECK (status IN ('confirmed', 'cancelled', 'completed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    -- Every referenced object must belong to the same clinic as the booking.
     CONSTRAINT fk_booking_customer_same_clinic
         FOREIGN KEY (clinic_id, customer_id)
         REFERENCES customers (clinic_id, id)
@@ -112,11 +110,8 @@ CREATE TABLE IF NOT EXISTS bookings (
         FOREIGN KEY (clinic_id, staff_id)
         REFERENCES staff (clinic_id, id)
         ON DELETE RESTRICT,
-
     CONSTRAINT booking_slot_nonempty
         CHECK (NOT isempty(slot_range)),
-
-    -- Database-level double-booking protection for the same staff member.
     EXCLUDE USING gist (
         staff_id WITH =,
         slot_range WITH &&
@@ -153,7 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_clinic_time
 CREATE OR REPLACE FUNCTION prevent_audit_modification()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Audit logs are immutable: UPDATE and DELETE are forbidden.';
+    RAISE EXCEPTION 'Audit logs are immutable: UPDATE and DELETE are forbidden.'
+        USING ERRCODE = '42501';
 END;
 $$ LANGUAGE plpgsql;
 
@@ -170,13 +166,6 @@ FOR EACH ROW EXECUTE FUNCTION prevent_audit_modification();
 -- ============================================================
 -- 8. RLS CONTEXT HELPERS
 -- ============================================================
--- FastAPI will set these transaction-local settings for every request:
---   SET LOCAL lydia.current_clinic_id = '123';
---   SET LOCAL lydia.current_user_id   = '456';
---   SET LOCAL lydia.current_role      = 'staff';
---
--- Missing/invalid context intentionally results in no rows for tenant tables.
-
 CREATE OR REPLACE FUNCTION lydia_context_bigint(setting_name TEXT)
 RETURNS BIGINT
 LANGUAGE SQL
@@ -198,19 +187,14 @@ $$;
 -- ============================================================
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users FORCE ROW LEVEL SECURITY;
-
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers FORCE ROW LEVEL SECURITY;
-
 ALTER TABLE staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE staff FORCE ROW LEVEL SECURITY;
-
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE services FORCE ROW LEVEL SECURITY;
-
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
-
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 
@@ -254,12 +238,8 @@ WITH CHECK (
 DROP POLICY IF EXISTS staff_tenant_isolation ON staff;
 CREATE POLICY staff_tenant_isolation ON staff
 FOR ALL
-USING (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-)
-WITH CHECK (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-);
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id'))
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
 -- ============================================================
 -- 13. SERVICES RLS
@@ -267,12 +247,8 @@ WITH CHECK (
 DROP POLICY IF EXISTS services_tenant_isolation ON services;
 CREATE POLICY services_tenant_isolation ON services
 FOR ALL
-USING (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-)
-WITH CHECK (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-);
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id'))
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
 -- ============================================================
 -- 14. BOOKINGS RLS
@@ -329,9 +305,7 @@ USING (
         OR lydia_context_text('lydia.current_role') IN ('admin', 'superadmin')
     )
 )
-WITH CHECK (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-);
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id'));
 
 DROP POLICY IF EXISTS bookings_delete ON bookings;
 CREATE POLICY bookings_delete ON bookings
