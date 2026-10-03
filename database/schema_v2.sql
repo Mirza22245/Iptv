@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_clinic ON customers (clinic_id);
 
 CREATE TABLE IF NOT EXISTS staff (
     id BIGSERIAL PRIMARY KEY,
-    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    clinic_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     display_name VARCHAR(255) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -131,19 +131,18 @@ ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
 
--- Users are readable only inside the active tenant. A normal customer may
--- only see their own row; staff/admin roles may see tenant users. Creation is
--- deliberately restricted to privileged roles so test/setup and production
--- provisioning behave consistently under FORCE ROW LEVEL SECURITY.
 DROP POLICY IF EXISTS users_tenant_isolation ON users;
 CREATE POLICY users_tenant_isolation ON users
 FOR SELECT
 USING (
-    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
-    AND (
-        id = lydia_context_bigint('lydia.current_user_id')
-        OR lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+    (
+        clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+        AND (
+            id = lydia_context_bigint('lydia.current_user_id')
+            OR lydia_context_text('lydia.current_role') IN ('staff', 'admin', 'superadmin')
+        )
     )
+    OR lower(email) = lower(lydia_context_text('lydia.login_email'))
 );
 
 DROP POLICY IF EXISTS users_insert ON users;
