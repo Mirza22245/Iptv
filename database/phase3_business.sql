@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS sales (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     paid_at TIMESTAMPTZ,
     FOREIGN KEY (clinic_id, customer_id) REFERENCES customers(clinic_id, id) ON DELETE SET NULL,
-    FOREIGN KEY (clinic_id, created_by_user_id) REFERENCES users(clinic_id, id) ON DELETE RESTRICT
+    FOREIGN KEY (clinic_id, created_by_user_id) REFERENCES users(clinic_id, id) ON DELETE RESTRICT,
+    UNIQUE (clinic_id, id)
 );
 CREATE INDEX IF NOT EXISTS idx_sales_clinic_time ON sales(clinic_id, created_at DESC);
 
