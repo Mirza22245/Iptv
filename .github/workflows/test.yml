@@ -24,7 +24,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -33,7 +32,7 @@ jobs:
         run: |
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE lydia_app LOGIN PASSWORD 'lydia-test-password' NOSUPERUSER NOBYPASSRLS;
-          GRANT CONNECT, TEMPORARY ON DATABASE lydia TO lydia_app;
+          GRANT CONNECT, TEMPORARY, CREATE ON DATABASE lydia TO lydia_app;
           SQL
 
       - name: Validate RLS test role
@@ -41,10 +40,7 @@ jobs:
           PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
           BEGIN
-            IF NOT EXISTS (
-              SELECT 1 FROM pg_roles
-              WHERE rolname = 'lydia_app' AND rolsuper = false AND rolbypassrls = false
-            ) THEN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='lydia_app' AND rolsuper=false AND rolbypassrls=false) THEN
               RAISE EXCEPTION 'lydia_app must be NOSUPERUSER and NOBYPASSRLS';
             END IF;
           END $$;
@@ -83,30 +79,13 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
-          DECLARE
-            required_table TEXT;
+          DECLARE required_table TEXT;
           BEGIN
-            FOREACH required_table IN ARRAY ARRAY[
-              'clinics','users','customers','staff','services','bookings','audit_logs',
-              'journal_templates','journal_notes','consents','before_after_images',
-              'products','inventory_movements','sales','sale_items','payments',
-              'integration_connections','integration_events','report_snapshots'
-            ] LOOP
-              IF to_regclass('public.' || required_table) IS NULL THEN
-                RAISE EXCEPTION 'Required Lydia table is missing: %', required_table;
-              END IF;
+            FOREACH required_table IN ARRAY ARRAY['clinics','users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots'] LOOP
+              IF to_regclass('public.' || required_table) IS NULL THEN RAISE EXCEPTION 'Required Lydia table is missing: %', required_table; END IF;
             END LOOP;
           END $$;
-
-          SELECT relname, relrowsecurity, relforcerowsecurity
-          FROM pg_class
-          WHERE relname IN (
-            'users','customers','staff','services','bookings','audit_logs',
-            'journal_templates','journal_notes','consents','before_after_images',
-            'products','inventory_movements','sales','sale_items','payments',
-            'integration_connections','integration_events','report_snapshots'
-          )
-          ORDER BY relname;
+          SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots') ORDER BY relname;
           SQL
 
       - name: Install dependencies
