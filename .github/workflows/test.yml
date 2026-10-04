@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: lydia
@@ -60,6 +60,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
+          set -euxo pipefail
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/schema_v2.sql
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/phase2_clinical.sql
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/phase3_business.sql
