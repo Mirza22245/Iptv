@@ -52,6 +52,30 @@ CREATE TABLE IF NOT EXISTS sales (
     FOREIGN KEY (clinic_id, created_by_user_id) REFERENCES users(clinic_id, id) ON DELETE RESTRICT,
     UNIQUE (clinic_id, id)
 );
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS receipt_number BIGINT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_clinic_receipt_number
+    ON sales(clinic_id, receipt_number)
+    WHERE receipt_number IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION assign_receipt_number()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.receipt_number IS NULL AND NEW.status = 'paid' THEN
+        NEW.receipt_number := (
+            SELECT COALESCE(MAX(receipt_number), 0) + 1
+            FROM sales
+            WHERE clinic_id = NEW.clinic_id
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_assign_receipt_number ON sales;
+CREATE TRIGGER trg_assign_receipt_number
+BEFORE INSERT OR UPDATE OF status ON sales
+FOR EACH ROW EXECUTE FUNCTION assign_receipt_number();
+
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS idempotency_fingerprint CHAR(64);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_clinic_idempotency_key
