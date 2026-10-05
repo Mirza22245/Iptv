@@ -61,6 +61,8 @@ CREATE OR REPLACE FUNCTION assign_receipt_number()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.receipt_number IS NULL AND NEW.status = 'paid' THEN
+        -- Serialize numbering per clinic so concurrent checkouts cannot allocate the same receipt number.
+        PERFORM pg_advisory_xact_lock(hashtextextended(NEW.clinic_id::text, 0));
         NEW.receipt_number := (
             SELECT COALESCE(MAX(receipt_number), 0) + 1
             FROM sales
