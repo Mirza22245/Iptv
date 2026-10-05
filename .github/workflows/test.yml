@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main, pos-hardening]
+    branches: [main, pos-hardening, gift-cards]
   pull_request:
 
 jobs:
@@ -51,6 +51,7 @@ jobs:
           test -s database/schema_v2.sql
           test -s database/phase2_clinical.sql
           test -s database/phase3_business.sql
+          test -s database/phase3_gift_cards.sql
 
       - name: Run Lydia database migrations
         env:
@@ -60,6 +61,7 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/schema_v2.sql
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/phase2_clinical.sql
           psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/phase3_business.sql
+          psql -h 127.0.0.1 -U postgres -d lydia -v ON_ERROR_STOP=1 -f database/phase3_gift_cards.sql
 
       - name: Grant test role table and sequence privileges
         env:
@@ -81,11 +83,11 @@ jobs:
           DO $$
           DECLARE required_table TEXT;
           BEGIN
-            FOREACH required_table IN ARRAY ARRAY['clinics','users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots'] LOOP
+            FOREACH required_table IN ARRAY ARRAY['clinics','users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots','gift_cards','gift_card_transactions'] LOOP
               IF to_regclass('public.' || required_table) IS NULL THEN RAISE EXCEPTION 'Required Lydia table is missing: %', required_table; END IF;
             END LOOP;
           END $$;
-          SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots') ORDER BY relname;
+          SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname IN ('users','customers','staff','services','bookings','audit_logs','journal_templates','journal_notes','consents','before_after_images','products','inventory_movements','sales','sale_items','payments','integration_connections','integration_events','report_snapshots','gift_cards','gift_card_transactions') ORDER BY relname;
           SQL
 
       - name: Install dependencies
