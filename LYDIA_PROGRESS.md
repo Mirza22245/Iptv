@@ -63,7 +63,7 @@ Required flow:
 
 ### P1 – Receipts
 
-- Persistent receipt numbering.
+- Persistent receipt numbering. **Implemented; awaiting green CI verification.**
 - Receipt rendering/printing/export.
 - VAT breakdown.
 - Customer receipt lookup.
