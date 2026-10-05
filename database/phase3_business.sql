@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS sales (
     FOREIGN KEY (clinic_id, created_by_user_id) REFERENCES users(clinic_id, id) ON DELETE RESTRICT,
     UNIQUE (clinic_id, id)
 );
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(128);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS idempotency_fingerprint CHAR(64);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_clinic_idempotency_key
+    ON sales(clinic_id, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_sales_clinic_time ON sales(clinic_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS sale_items (
