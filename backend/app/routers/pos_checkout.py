@@ -6,7 +6,7 @@ import json
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
@@ -50,6 +50,7 @@ def _response(sale: dict[str, Any], payment: dict[str, Any], audit: dict[str, An
         "sale": sale,
         "payment": payment,
         "receipt_id": sale["id"],
+        "receipt_number": sale.get("receipt_number"),
         "audit": audit,
     }
 
@@ -74,7 +75,7 @@ async def checkout(
 
     async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
         existing = await conn.fetchrow(
-            """SELECT id, idempotency_fingerprint, status, receipt_number, subtotal, vat_total, total, currency, created_at, paid_at
+            """SELECT id, idempotency_fingerprint, status, receipt_number, subtotal, vat_total, total, currency, created_at, paid_at, idempotency_key
                FROM sales WHERE clinic_id=$1 AND idempotency_key=$2 FOR UPDATE""",
             clinic_id, idempotency_key,
         )
@@ -199,3 +200,39 @@ async def checkout(
             user_id,
         )
         return _response(dict(sale), dict(payment), dict(audit))
+
+
+@router.get("/receipts/{receipt_number}")
+async def get_receipt(
+    receipt_number: int,
+    token: dict[str, Any] = Depends(require_role("staff", "admin", "superadmin")),
+    db: Database = Depends(get_database),
+):
+    if receipt_number <= 0:
+        raise HTTPException(422, "Invalid receipt number")
+    clinic_id = int(token["clinic_id"])
+    user_id = int(token["sub"])
+    role = str(token["role"])
+    async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
+        sale = await conn.fetchrow(
+            """SELECT id,receipt_number,customer_id,status,subtotal,vat_total,total,currency,created_at,paid_at
+               FROM sales WHERE clinic_id=$1 AND receipt_number=$2""",
+            clinic_id, receipt_number,
+        )
+        if not sale:
+            raise HTTPException(404, "Receipt not found")
+        items = await conn.fetch(
+            """SELECT id,product_id,service_id,description,quantity,unit_price,vat_rate,line_total
+               FROM sale_items WHERE clinic_id=$1 AND sale_id=$2 ORDER BY id""",
+            clinic_id, sale["id"],
+        )
+        payments = await conn.fetch(
+            """SELECT id,method,amount,status,external_reference,created_at
+               FROM payments WHERE clinic_id=$1 AND sale_id=$2 ORDER BY id""",
+            clinic_id, sale["id"],
+        )
+        return jsonable_encoder({
+            "receipt": dict(sale),
+            "items": [dict(row) for row in items],
+            "payments": [dict(row) for row in payments],
+        })
