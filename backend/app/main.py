@@ -14,6 +14,7 @@ from app.routers.business import router as business_router
 from app.routers.clinical import router as clinical_router
 from app.routers.clinical_media import router as clinical_media_router
 from app.routers.gift_cards import router as gift_cards_router
+from app.routers.pos_checkout import router as pos_checkout_router
 
 
 @asynccontextmanager
@@ -34,7 +35,7 @@ if cors_origins:
         allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
     )
 
 app.include_router(auth_router)
@@ -42,6 +43,7 @@ app.include_router(bookings_router)
 app.include_router(dashboard_router)
 app.include_router(clinical_router)
 app.include_router(clinical_media_router)
+app.include_router(pos_checkout_router)
 app.include_router(business_router)
 app.include_router(gift_cards_router)
 
