@@ -181,7 +181,7 @@ async def checkout(
         )
         sale_status = "open" if payment_status == "pending" else "paid"
         await conn.execute(
-            "UPDATE sales SET status=$1,paid_at=CASE WHEN $1='paid' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=$2 AND clinic_id=$3",
+            "UPDATE sales SET status=$1::varchar,paid_at=CASE WHEN $1::varchar='paid' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=$2 AND clinic_id=$3",
             sale_status, sale["id"], clinic_id,
         )
         sale = await conn.fetchrow(
