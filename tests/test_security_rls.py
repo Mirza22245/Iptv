@@ -24,7 +24,7 @@ async def database_connection():
         await connection.execute(f'SET search_path TO "{schema_name}"')
         root = Path(__file__).parents[1] / "database"
         await connection.execute((root / "schema_v2.sql").read_text())
-        await connection.execute((root / "database/phase2_clinical.sql").read_text()) if False else None
+        await connection.execute((root / "phase2_clinical.sql").read_text())
         yield connection
     finally:
         await connection.execute("RESET search_path")
