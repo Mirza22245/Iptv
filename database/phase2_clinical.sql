@@ -55,12 +55,16 @@ ALTER TABLE before_after_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE before_after_images FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS journal_templates_tenant ON journal_templates;
+DROP POLICY IF EXISTS journal_templates_select ON journal_templates;
 CREATE POLICY journal_templates_select ON journal_templates FOR SELECT
 USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'));
-DROP POLICY IF EXISTS journal_templates_select ON journal_templates;
 DROP POLICY IF EXISTS journal_templates_insert ON journal_templates;
 CREATE POLICY journal_templates_insert ON journal_templates FOR INSERT
-WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'));
+WITH CHECK (
+    clinic_id = lydia_context_bigint('lydia.current_clinic_id')
+    AND lydia_context_text('lydia.current_role') IN ('admin','superadmin')
+    AND created_by_user_id = lydia_context_bigint('lydia.current_user_id')
+);
 DROP POLICY IF EXISTS journal_templates_update ON journal_templates;
 CREATE POLICY journal_templates_update ON journal_templates FOR UPDATE
 USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'))
