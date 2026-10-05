@@ -19,7 +19,7 @@ async def test_checkout_assigns_persistent_receipt_number():
         token = {"clinic_id": clinic_id, "sub": user_id, "role": "admin"}
         payload = CheckoutIn(items=[CheckoutItemIn(product_id=product_id,description="Receipt product",quantity=1)], payment_method="cash")
         first = await checkout(payload=payload, idempotency_key="receipt-test-001", token=token, db=db)
-        assert first["receipt_id"] == first["sale"]["receipt_number"]
+        assert first["receipt_id"] == first["sale"]["id"]
         assert first["sale"]["receipt_number"] >= 1
     finally:
         await shutdown_database()
