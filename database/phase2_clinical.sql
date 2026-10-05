@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS journal_templates (
 );
 CREATE TABLE IF NOT EXISTS journal_notes (
     id BIGSERIAL PRIMARY KEY,
-    clinic_id BIGINT NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    clinic_id BIGINT NOT NULL,
     customer_id BIGINT NOT NULL,
     author_id BIGINT NOT NULL,
     treatment VARCHAR(255), area VARCHAR(255), indication TEXT, assessment TEXT, plan TEXT,
@@ -55,9 +55,19 @@ ALTER TABLE before_after_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE before_after_images FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS journal_templates_tenant ON journal_templates;
-CREATE POLICY journal_templates_tenant ON journal_templates FOR ALL
-USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'))
-WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'));
+CREATE POLICY journal_templates_select ON journal_templates FOR SELECT
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'));
+DROP POLICY IF EXISTS journal_templates_select ON journal_templates;
+DROP POLICY IF EXISTS journal_templates_insert ON journal_templates;
+CREATE POLICY journal_templates_insert ON journal_templates FOR INSERT
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'));
+DROP POLICY IF EXISTS journal_templates_update ON journal_templates;
+CREATE POLICY journal_templates_update ON journal_templates FOR UPDATE
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'))
+WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'));
+DROP POLICY IF EXISTS journal_templates_delete ON journal_templates;
+CREATE POLICY journal_templates_delete ON journal_templates FOR DELETE
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'));
 
 DROP POLICY IF EXISTS journal_notes_select ON journal_notes;
 CREATE POLICY journal_notes_select ON journal_notes FOR SELECT
@@ -67,11 +77,11 @@ CREATE POLICY journal_notes_insert ON journal_notes FOR INSERT
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND author_id = lydia_context_bigint('lydia.current_user_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'));
 DROP POLICY IF EXISTS journal_notes_update ON journal_notes;
 CREATE POLICY journal_notes_update ON journal_notes FOR UPDATE
-USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND is_signed = FALSE AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'))
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'))
 WITH CHECK (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND (is_signed = FALSE OR (is_signed = TRUE AND signed_by_id = lydia_context_bigint('lydia.current_user_id'))));
 DROP POLICY IF EXISTS journal_notes_delete ON journal_notes;
 CREATE POLICY journal_notes_delete ON journal_notes FOR DELETE
-USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND is_signed = FALSE AND lydia_context_text('lydia.current_role') IN ('admin','superadmin'));
+USING (clinic_id = lydia_context_bigint('lydia.current_clinic_id') AND lydia_context_text('lydia.current_role') IN ('staff','admin','superadmin'));
 
 DROP POLICY IF EXISTS consents_access ON consents;
 CREATE POLICY consents_access ON consents FOR ALL
