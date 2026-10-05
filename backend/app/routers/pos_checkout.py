@@ -74,7 +74,7 @@ async def checkout(
 
     async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
         existing = await conn.fetchrow(
-            """SELECT id, idempotency_fingerprint, status, subtotal, vat_total, total, currency, created_at, paid_at
+            """SELECT id, idempotency_fingerprint, status, receipt_number, subtotal, vat_total, total, currency, created_at, paid_at
                FROM sales WHERE clinic_id=$1 AND idempotency_key=$2 FOR UPDATE""",
             clinic_id, idempotency_key,
         )
@@ -146,7 +146,7 @@ async def checkout(
             """INSERT INTO sales
                (clinic_id,customer_id,status,subtotal,vat_total,total,currency,created_by_user_id,idempotency_key,idempotency_fingerprint)
                VALUES ($1,$2,'open',$3,$4,$5,'SEK',$6,$7,$8)
-               RETURNING id,clinic_id,status,subtotal,vat_total,total,currency,created_at,paid_at,idempotency_key""",
+               RETURNING id,clinic_id,status,receipt_number,subtotal,vat_total,total,currency,created_at,paid_at,idempotency_key""",
             clinic_id, payload.customer_id, subtotal, vat_total, total, user_id, idempotency_key, fingerprint,
         )
 
@@ -185,7 +185,7 @@ async def checkout(
             sale_status, sale["id"], clinic_id,
         )
         sale = await conn.fetchrow(
-            """SELECT id,clinic_id,status,subtotal,vat_total,total,currency,created_at,paid_at,idempotency_key
+            """SELECT id,clinic_id,status,receipt_number,subtotal,vat_total,total,currency,created_at,paid_at,idempotency_key
                FROM sales WHERE id=$1 AND clinic_id=$2""",
             sale["id"], clinic_id,
         )
