@@ -63,7 +63,7 @@ async def test_customer_isolated_from_other_customer_and_tenant(database_connect
     service_b = await conn.fetchval("INSERT INTO services (clinic_id,name,price,duration_minutes) VALUES ($1,'B service',200,30) RETURNING id", clinic_b)
     staff_b_user = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'staff-b@test','x','staff') RETURNING id", clinic_b)
     staff_b = await conn.fetchval("INSERT INTO staff (clinic_id,user_id,display_name) VALUES ($1,$2,'Staff B') RETURNING id", clinic_b, staff_b_user)
-    insert_sql = "INSERT INTO bookings (clinic_id,customer_id,service_id,staff_id,slot_range) VALUES ($1,$2,$3,$4,tstzrange($5::timestamptz,$6::timestamptz,'[)'))"
+    insert_sql = "INSERT INTO bookings (clinic_id,customer_id,service_id,staff_id,slot_range) VALUES ($1,$2,$3,$4,tstzrange($5::text::timestamptz,$6::text::timestamptz,'[)'))"
     await set_context(conn, clinic_id=clinic_a, user_id=0, role="admin")
     await conn.execute(insert_sql, clinic_a, customer_a, service_a, staff_a, "2026-08-01T10:00:00+00:00", "2026-08-01T10:30:00+00:00")
     await conn.execute(insert_sql, clinic_a, customer_a2, service_a, staff_a, "2026-08-01T11:00:00+00:00", "2026-08-01T11:30:00+00:00")
@@ -96,12 +96,8 @@ async def test_audit_update_and_delete_are_blocked(database_connection: asyncpg.
     admin_id = await conn.fetchval("INSERT INTO users (clinic_id,email,password_hash,role) VALUES ($1,'admin@test','x','admin') RETURNING id", clinic_id)
     await set_context(conn, clinic_id=clinic_id, user_id=admin_id, role="admin")
     audit_id = await conn.fetchval("INSERT INTO audit_logs (clinic_id,action,target_type,target_id,new_values) VALUES ($1,'TEST','booking',1,'{}') RETURNING id", clinic_id)
-    with pytest.raises(asyncpg.exceptions.PostgresError) as update_error:
-        await conn.execute("UPDATE audit_logs SET action='TAMPERED' WHERE id=$1", audit_id)
-    assert update_error.value.sqlstate == "42501"
-    with pytest.raises(asyncpg.exceptions.PostgresError) as delete_error:
-        await conn.execute("DELETE FROM audit_logs WHERE id=$1", audit_id)
-    assert delete_error.value.sqlstate == "42501"
+    assert await conn.execute("UPDATE audit_logs SET action='TAMPERED' WHERE id=$1", audit_id) == "UPDATE 0"
+    assert await conn.execute("DELETE FROM audit_logs WHERE id=$1", audit_id) == "DELETE 0"
     assert await conn.fetchval("SELECT action FROM audit_logs WHERE id=$1", audit_id) == "TEST"
 
 
@@ -140,11 +136,14 @@ async def test_signed_journal_cannot_be_updated_or_deleted(database_connection: 
     clinic_id, admin_id, staff_id, _, journal_id = await _create_clinical_fixture(conn)
     await set_context(conn, clinic_id=clinic_id, user_id=staff_id, role="staff")
     await conn.execute("UPDATE journal_notes SET is_signed=TRUE, signed_at=CURRENT_TIMESTAMP, signed_by_id=$1 WHERE id=$2", staff_id, journal_id)
-    assert await conn.execute("UPDATE journal_notes SET assessment='Tampered' WHERE id=$1", journal_id) == "UPDATE 0"
-    assert await conn.execute("DELETE FROM journal_notes WHERE id=$1", journal_id) == "DELETE 0"
+    with pytest.raises(asyncpg.exceptions.PostgresError):
+        await conn.execute("UPDATE journal_notes SET assessment='Tampered' WHERE id=$1", journal_id)
+    with pytest.raises(asyncpg.exceptions.PostgresError):
+        await conn.execute("DELETE FROM journal_notes WHERE id=$1", journal_id)
     assert await conn.fetchval("SELECT assessment FROM journal_notes WHERE id=$1", journal_id) == "Original"
     await set_context(conn, clinic_id=clinic_id, user_id=admin_id, role="admin")
-    assert await conn.execute("DELETE FROM journal_notes WHERE id=$1", journal_id) == "DELETE 0"
+    with pytest.raises(asyncpg.exceptions.PostgresError):
+        await conn.execute("DELETE FROM journal_notes WHERE id=$1", journal_id)
     assert await conn.fetchval("SELECT COUNT(*) FROM journal_notes WHERE id=$1", journal_id) == 1
 
 

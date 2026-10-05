@@ -24,7 +24,6 @@ async def database_connection():
         await connection.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
         await connection.execute(f'CREATE SCHEMA "{schema_name}"')
         await connection.execute(f'SET search_path TO "{schema_name}"')
-
         schema_sql = Path(__file__).parents[1].joinpath("database", "schema_v2.sql").read_text()
         await connection.execute(schema_sql)
         yield connection
@@ -46,7 +45,7 @@ async def set_admin_context(conn: asyncpg.Connection, clinic_id: int) -> None:
 BOOKING_INSERT = (
     "INSERT INTO bookings "
     "(clinic_id, customer_id, service_id, staff_id, slot_range) "
-    "VALUES ($1, $2, $3, $4, tstzrange($5::timestamptz, $6::timestamptz, '[)'))"
+    "VALUES ($1, $2, $3, $4, tstzrange($5::text::timestamptz, $6::text::timestamptz, '[)'))"
 )
 
 
