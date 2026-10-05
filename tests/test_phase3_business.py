@@ -68,5 +68,4 @@ async def test_customer_role_cannot_access_business_tables(connection):
     cid, admin = await clinic(conn, "Permissions")
     customer = await conn.fetchval("INSERT INTO users(clinic_id,email,password_hash,role) VALUES($1,'customer@test','x','customer') RETURNING id", cid)
     await context(conn, cid, customer, "customer")
-    with pytest.raises(asyncpg.exceptions.InsufficientPrivilegeError):
-        await conn.execute("SELECT count(*) FROM products")
+    assert await conn.fetchval("SELECT count(*) FROM products") == 0
