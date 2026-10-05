@@ -51,26 +51,47 @@ async def get_gift_card_balance(db: Database, clinic_id: int, user_id: int, role
 async def redeem_gift_card(db: Database, clinic_id: int, user_id: int, role: str, code: str, amount: Decimal, reference_id: int | None = None) -> dict[str, Any]:
     amount = _money(amount)
     if amount <= 0: raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "amount must be greater than zero")
+    # Expiry is a state transition of its own. Commit it before raising the
+    # rejection so the card cannot remain active after an expired redemption.
+    expired = False
     async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
-        if reference_id is not None and await conn.fetchval("SELECT 1 FROM gift_card_transactions WHERE clinic_id=$1 AND type='redeem' AND reference_id=$2", clinic_id, reference_id):
-            raise HTTPException(status.HTTP_409_CONFLICT, "Redeem reference_id has already been used")
-        card = await conn.fetchrow("""SELECT id, code, balance, status, expires_at FROM gift_cards WHERE clinic_id=$1 AND code=$2 FOR UPDATE""", clinic_id, code)
+        card = await conn.fetchrow("SELECT id, code, balance, status, expires_at FROM gift_cards WHERE clinic_id=$1 AND code=$2 FOR UPDATE", clinic_id, code)
         if not card: raise HTTPException(status.HTTP_404_NOT_FOUND, "Gift card not found")
         now = datetime.now(timezone.utc)
         if card["status"] == "active" and card["expires_at"] is not None and card["expires_at"] <= now:
             await conn.execute("UPDATE gift_cards SET status='expired', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND clinic_id=$2", card["id"], clinic_id)
             await conn.execute("INSERT INTO gift_card_transactions (clinic_id,gift_card_id,type,amount,created_by_user_id) VALUES ($1,$2,'expire',$3,$4)", clinic_id, card["id"], card["balance"], user_id)
             await _audit(conn, clinic_id, user_id, "gift_card_expired", card["id"], {"balance": card["balance"]})
-            raise HTTPException(status.HTTP_409_CONFLICT, "Gift card has expired")
-        if card["status"] != "active": raise HTTPException(status.HTTP_409_CONFLICT, f"Gift card is not active (status: {card['status']})")
-        balance = Decimal(card["balance"])
-        if amount > balance: raise HTTPException(status.HTTP_409_CONFLICT, "Insufficient gift card balance")
-        new_balance = _money(balance - amount)
-        new_status = "depleted" if new_balance == 0 else "active"
-        updated = await conn.fetchrow("""UPDATE gift_cards SET balance=$1,status=$2,updated_at=CURRENT_TIMESTAMP WHERE id=$3 AND clinic_id=$4 RETURNING id, clinic_id, code, initial_amount, balance, status, expires_at, created_at, updated_at""", new_balance, new_status, card["id"], clinic_id)
-        await conn.execute("""INSERT INTO gift_card_transactions (clinic_id,gift_card_id,type,amount,reference_id,created_by_user_id) VALUES ($1,$2,'redeem',$3,$4,$5)""", clinic_id, card["id"], amount, reference_id, user_id)
-        await _audit(conn, clinic_id, user_id, "gift_card_redeemed", card["id"], {"amount": amount, "balance": new_balance, "reference_id": reference_id})
-        return dict(updated)
+            expired = True
+    if expired:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Gift card has expired")
+    async with db.transaction(clinic_id=clinic_id, user_id=user_id, role=role) as conn:
+        if reference_id is not None and await conn.fetchval("SELECT 1 FROM gift_card_transactions WHERE clinic_id=$1 AND type='redeem' AND reference_id=$2", clinic_id, reference_id):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Redeem reference_id has already been used")
+        card = await conn.fetchrow("SELECT id, code, balance, status, expires_at FROM gift_cards WHERE clinic_id=$1 AND code=$2 FOR UPDATE", clinic_id, code)
+        if not card: raise HTTPException(status.HTTP_404_NOT_FOUND, "Gift card not found")
+        now = datetime.now(timezone.utc)
+        if card["status"] == "active" and card["expires_at"] is not None and card["expires_at"] <= now:
+            # Another transaction may have crossed the expiry boundary between
+            # the two transactions; persist the expiry state and reject.
+            await conn.execute("UPDATE gift_cards SET status='expired', updated_at=CURRENT_TIMESTAMP WHERE id=$1 AND clinic_id=$2", card["id"], clinic_id)
+            await conn.execute("INSERT INTO gift_card_transactions (clinic_id,gift_card_id,type,amount,created_by_user_id) VALUES ($1,$2,'expire',$3,$4)", clinic_id, card["id"], card["balance"], user_id)
+            await _audit(conn, clinic_id, user_id, "gift_card_expired", card["id"], {"balance": card["balance"]})
+            expired = True
+        if expired:
+            pass
+        elif card["status"] != "active":
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Gift card is not active (status: {card['status']})")
+        else:
+            balance = Decimal(card["balance"])
+            if amount > balance: raise HTTPException(status.HTTP_409_CONFLICT, "Insufficient gift card balance")
+            new_balance = _money(balance - amount)
+            new_status = "depleted" if new_balance == 0 else "active"
+            updated = await conn.fetchrow("""UPDATE gift_cards SET balance=$1,status=$2,updated_at=CURRENT_TIMESTAMP WHERE id=$3 AND clinic_id=$4 RETURNING id, clinic_id, code, initial_amount, balance, status, expires_at, created_at, updated_at""", new_balance, new_status, card["id"], clinic_id)
+            await conn.execute("""INSERT INTO gift_card_transactions (clinic_id,gift_card_id,type,amount,reference_id,created_by_user_id) VALUES ($1,$2,'redeem',$3,$4,$5)""", clinic_id, card["id"], amount, reference_id, user_id)
+            await _audit(conn, clinic_id, user_id, "gift_card_redeemed", card["id"], {"amount": amount, "balance": new_balance, "reference_id": reference_id})
+            return dict(updated)
+    raise HTTPException(status.HTTP_409_CONFLICT, "Gift card has expired")
 
 
 async def refund_gift_card(db: Database, clinic_id: int, user_id: int, role: str, code: str, amount: Decimal, reference_id: int | None = None) -> dict[str, Any]:
